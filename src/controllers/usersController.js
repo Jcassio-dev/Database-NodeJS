@@ -1,5 +1,8 @@
 const AppError = require('../utils/appError')
 
+const { hash } = require('bcryptjs')
+
+const sqliteConnection = require('../database/sqlite')
 
 
 class usersController {
@@ -10,17 +13,60 @@ class usersController {
         * update - PUT para atualizar um registro  
         * delete - DELETE para remover um registro
      */
-    create(request, response){
-        const {name, email, password} = request.bodyxxxx
+    async create(request, response){
+        const {name, email, password} = request.body;
 
-        if(!name){
-            throw new AppError("O nome é obrigatório")
+        const database = await sqliteConnection();
+
+        const checkUserExists = await database.get("SELECT * FROM users WHERE email = (?)", [email])
+        
+
+        if(checkUserExists){
+            throw new AppError("Este e-mail já foi cadastrado.");
+        }
+
+        const hashedPassword = await hash(password, 8);
+        
+        await database.run('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [name, email, hashedPassword])
+
+        return response.status(201).json({})
+
+    }
+    async update(request, response) {
+        const { name, email } = request.body;
+        const { id } = request.params;
+
+
+        const database = await sqliteConnection();
+        const user = await database.get("SELECT * FROM users WHERE id = (?)", [id]);
+        
+        console.log(user, name, email, id)
+
+        if(!user) {
+            throw new AppError("Usuário não encontrado!")
+        }
+        
+
+        const userWithUpdatedEmail = await database.get('SELECT * FROM users WHERE email = (?)', [email])
+        
+        if(userWithUpdatedEmail && userWithUpdatedEmail.id !== user.id){
+            throw new AppError("Este e-mail já está em uso!");
         }
 
 
-        response.status(201).json({name, email, password})
+        user.name = name;
+        user.email = email;
+
+        await database.run(`
+            UPDATE users SET
+            name = ?,
+            email = ?,
+            update_at = ?
+            WHERE id = ?`,
+            [user.name, user.email, new Date(), id]
+            );
+
+        return response.json();
     }
-};
-
-
+}
 module.exports = usersController;
